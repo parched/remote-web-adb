@@ -16,3 +16,6 @@ RUN bash -c ". $NVM_DIR/nvm.sh \
     && nvm install $NODE_VERSION \
     && nvm use $NODE_VERSION \
     && nvm alias default $NODE_VERSION"
+
+RUN bash -c ". $NVM_DIR/nvm.sh \
+    && npm install --global http-server"

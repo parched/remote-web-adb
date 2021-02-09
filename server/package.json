@@ -1,0 +1,17 @@
+{
+  "name": "websocket-forward",
+  "version": "0.1.0",
+  "description": "Forwards a websocket to a TCP/IP socket",
+  "main": "websocket-forward.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "websocket"
+  ],
+  "author": "James Duley",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "websocket-stream": "^5.5.2"
+  }
+}

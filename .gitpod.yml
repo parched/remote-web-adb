@@ -1,5 +1,5 @@
 tasks:
-  - init: 'npm install'
+  - init: 'pushd server && { npm install; popd; }'
 
 image:
   file: Dockerfile
