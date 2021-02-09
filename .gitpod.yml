@@ -4,3 +4,9 @@ tasks:
 
 image:
   file: Dockerfile
+
+ports:
+  - port: 8080
+    onOpen: ignore
+  - port: 5555
+    onOpen: ignore

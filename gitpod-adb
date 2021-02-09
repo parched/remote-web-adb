@@ -1,0 +1,18 @@
+#!/bin/bash
+
+trap 'kill 0' INT
+
+ws_port=8080
+ws_url=`gp url $ws_port`
+sed 's,WEBSOCKET_URL,'${ws_url/http/ws}',g' adb.html > index.html
+
+adb_port=5555
+node websocket-forward.js $ws_port $adb_port &
+gp await-port $ws_port
+
+html_port=3000
+python3 -m http.server $html_port &
+gp await-port $html_port
+echo "Open in new tab $(gp url $html_port)"
+
+wait

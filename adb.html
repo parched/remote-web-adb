@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+
+    <h2>Remote ADB</h2>
+
+    <script src="./queue.js"></script>
+
+    <script>
+        async function connect(button) {
+            try {
+                button.disabled = true;
+                const adb = await getAdbDevice();
+                try {
+                    let wsUrl = "WEBSOCKET_URL"; // new URLSearchParams(location.search).get("url");  
+                    console.log(`connecting to websocket ${wsUrl}`);
+                    let socket = new WebSocket(wsUrl);
+                    socket.binaryType = "arraybuffer";
+
+                    let socketOpened = new Promise((resolve, reject) => {
+                        socket.onopen = function (e) {
+                            console.log("websocket opened");
+
+                            resolve(true);
+                        };
+                    });
+
+                    socket.onclose = function (event) {
+                        console.log(`websocket closed, wasClean=${event.wasClean}, code=${event.code} reason=${event.reason}`);
+
+                        // TODO: await adb.close();
+                    };
+
+                    socket.onerror = function (error) {
+                        console.log(`websocket error: ${error.message}`);
+                    };
+
+                    let queue = new Queue();
+                    socket.onmessage = async function (event) {
+                        queue.write(event.data);
+                    };
+
+
+                    await socketOpened;
+                    await Promise.all([readLoop(socket, adb), writeLoop(queue, adb)]);
+
+                } finally {
+                    await adb.close();
+                }
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function readLoop(socket, adb) {
+            while (true) {
+                console.log('usb receiving header');
+                const header = await adb.transferIn(24);
+                if (header.status != "ok") {
+                    // TODO:
+                    return;
+                }
+                socket.send(header.data);
+
+                const length = header.data.getUint32(12, true);
+                // console.log(`usb receiving payload length=${length}`);
+                if (length > 0) {
+                    let payload = await adb.transferIn(length);
+                    if (payload.status != "ok") {
+                        // TODO:
+                        return;
+                    }
+                    socket.send(payload.data);
+                }
+            }
+            console.log("exit read loop");
+        }
+
+        async function writeLoop(queue, adb) {
+            while (true) {
+                let header = await queue.read(24);
+
+                let outResult = await adb.transferOut(header);
+                // console.log(`sent to usb with status ${outResult.status}`);
+
+                let length = header.getUint32(12, true);
+                // console.log(`read from socket queue payload length=${length}`);
+                if (length > 0) {
+                    let payload = await queue.read(length);
+
+                    let outResult = await adb.transferOut(payload);
+                    if (payload.status != "ok") {
+                        // TODO:
+                        return;
+                    }
+                }
+            }
+            console.log("exit write loop");
+        }
+
+        // https://cs.android.com/android/platform/superproject/+/master:packages/modules/adb/adb.h;drc=bea8f3c0203a77a114bf70885befc582f3f6cef6;l=195
+        const ADB_CLASS = 0xff;
+        const ADB_SUBCLASS = 0x42;
+        const ADB_PROTOCOL = 0x1;
+
+        async function getAdbDevice() {
+            const adbFilter = { classCode: ADB_CLASS, subclassCode: ADB_SUBCLASS, protocolCode: ADB_PROTOCOL };
+            // opens popup
+            const device = await navigator.usb.requestDevice({ filters: [adbFilter] });
+            await device.open();
+            console.log("usb device open");
+
+            const { configurationValue,
+                interfaceNumber,
+                alternateSetting,
+                endpoints } = getAdbInterfaceAndEndpoints(device);
+
+            await device.selectConfiguration(configurationValue);
+            await device.claimInterface(interfaceNumber);
+            await device.selectAlternateInterface(interfaceNumber, alternateSetting);
+
+            await device.reset(); // TODO: this seems to be needed, not sure why
+
+            console.log("usb device configured");
+
+
+            return {
+                transferIn: (length) => device.transferIn(endpoints.in, length),
+                transferOut: (data) => device.transferOut(endpoints.out, data),
+                close: () => null, // TODO: device.close(),
+            };
+        }
+
+        function getAdbInterfaceAndEndpoints(device) {
+            console.log(`device: ${device.productName} with ${device.configurations.length} configurations`);
+            for (let i = 0; i < device.configurations.length; ++i) {
+                const configuration = device.configurations[i];
+                console.log(`  configuration: ${configuration.configurationName} with ${configuration.interfaces.length} interfaces`);
+                for (let j = 0; j < configuration.interfaces.length; ++j) {
+                    const interface = configuration.interfaces[j];
+                    console.log(`    interface: ${interface.interfaceNumber} with ${interface.alternates.length} alternates`);
+                    for (let k = 0; k < interface.alternates.length; ++k) {
+                        const alternate = interface.alternates[k];
+                        console.log(`      alternate: ${alternate.alternateSetting} with ${alternate.endpoints.length} endpoints`);
+                        console.log(`        class: ${alternate.interfaceClass} subclass: ${alternate.interfaceSubclass} protocol: ${alternate.interfaceProtocol}`);
+                        if (alternate.interfaceClass == ADB_CLASS && alternate.interfaceSubclass == ADB_SUBCLASS && alternate.interfaceProtocol == ADB_PROTOCOL) {
+                            return {
+                                configurationValue: configuration.configurationValue,
+                                interfaceNumber: interface.interfaceNumber,
+                                alternateSetting: alternate.alternateSetting,
+                                endpoints: {
+                                    in: getEndpointNumber(alternate, "bulk", "in"),
+                                    out: getEndpointNumber(alternate, "bulk", "out"),
+                                }
+                            };
+                        }
+                    }
+                }
+            }
+            console.log("interface not found");
+            return null;
+        }
+
+        function getEndpointNumber(alternate, type, direction) {
+            for (let i = 0; i < alternate.endpoints.length; ++i) {
+                const endpoint = alternate.endpoints[i];
+                if (endpoint.type == type && endpoint.direction == direction) {
+                    return endpoint.endpointNumber;
+                }
+            }
+            console.log("endpoint not found");
+            return -1;
+        }
+    </script>
+    <button id="connect" onclick="connect(this)">Connect</button>
+</body>
+
+</html>
