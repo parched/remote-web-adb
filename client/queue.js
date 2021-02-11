@@ -5,6 +5,10 @@ function Queue() {
 }
 
 Queue.prototype.write = function (message) {
+    if (message.byteLength == 0) {
+        return;
+    }
+
     if (this.waitingRead == null) {
         this.messages.push(message);
         return;

@@ -8,17 +8,19 @@
     <script src="./queue.js"></script>
 
     <script>
+        "use strict";
         async function connect(button) {
             try {
                 button.disabled = true;
                 const adb = await getAdbDevice();
+                let adbClose = null;
                 try {
-                    let wsUrl = "WEBSOCKET_URL"; // new URLSearchParams(location.search).get("url");  
+                    const wsUrl = "WEBSOCKET_URL"; // new URLSearchParams(location.search).get("url");
                     console.log(`connecting to websocket ${wsUrl}`);
-                    let socket = new WebSocket(wsUrl);
+                    const socket = new WebSocket(wsUrl);
                     socket.binaryType = "arraybuffer";
 
-                    let socketOpened = new Promise((resolve, reject) => {
+                    const socketOpened = new Promise((resolve, reject) => {
                         socket.onopen = function (e) {
                             console.log("websocket opened");
 
@@ -28,25 +30,31 @@
 
                     socket.onclose = function (event) {
                         console.log(`websocket closed, wasClean=${event.wasClean}, code=${event.code} reason=${event.reason}`);
-
-                        // TODO: await adb.close();
+                        if (adbClose == null) {
+                            adbClose = adb.close();
+                        }
                     };
 
                     socket.onerror = function (error) {
                         console.log(`websocket error: ${error.message}`);
                     };
 
-                    let queue = new Queue();
+                    const queue = new Queue();
                     socket.onmessage = async function (event) {
                         queue.write(event.data);
                     };
 
 
                     await socketOpened;
-                    await Promise.all([readLoop(socket, adb), writeLoop(queue, adb)]);
-
+                    const pingId = setInterval(() => socket.send(''), 1000);
+                    try {
+                        await Promise.all([readLoop(socket, adb), writeLoop(queue, adb)]);
+                    } finally { clearInterval(pingId); }
                 } finally {
-                    await adb.close();
+                    if (adbClose == null) {
+                        adbClose = adb.close();
+                    }
+                    await adbClose;
                 }
             } finally {
                 button.disabled = false;
@@ -55,11 +63,15 @@
 
         async function readLoop(socket, adb) {
             while (true) {
-                console.log('usb receiving header');
+                // console.log('usb receiving header');
                 const header = await adb.transferIn(24);
                 if (header.status != "ok") {
-                    // TODO:
-                    return;
+                    // TODO: should we try recover?
+                    throw new Error(`header recieve failed: ${header.status}`);
+                }
+                if (header.data.byteLength != 24) {
+                    // TODO: should we try recover?
+                    throw new Error(`header recieved wrong length: ${header.data.byteLength} != 24`);
                 }
                 socket.send(header.data);
 
@@ -68,8 +80,12 @@
                 if (length > 0) {
                     let payload = await adb.transferIn(length);
                     if (payload.status != "ok") {
-                        // TODO:
-                        return;
+                        // TODO: should we try recover?
+                        throw new Error(`payload recieve failed: ${header.status}`);
+                    }
+                    if (payload.data.byteLength != length) {
+                        // TODO: should we try recover?
+                        throw new Error(`payload recieved wrong length: ${payload.data.byteLength} != ${length}`);
                     }
                     socket.send(payload.data);
                 }
@@ -79,20 +95,22 @@
 
         async function writeLoop(queue, adb) {
             while (true) {
-                let header = await queue.read(24);
+                const header = await queue.read(24);
 
-                let outResult = await adb.transferOut(header);
+                const outResult = await adb.transferOut(header);
+                if (outResult.bytesWritten != 24) {
+                    throw new Error(`header write incomplete ${outResult.bytesWritten} of 24`);
+                }
                 // console.log(`sent to usb with status ${outResult.status}`);
 
-                let length = header.getUint32(12, true);
+                const length = header.getUint32(12, true);
                 // console.log(`read from socket queue payload length=${length}`);
                 if (length > 0) {
-                    let payload = await queue.read(length);
+                    const payload = await queue.read(length);
 
-                    let outResult = await adb.transferOut(payload);
-                    if (payload.status != "ok") {
-                        // TODO:
-                        return;
+                    const outResult = await adb.transferOut(payload);
+                    if (outResult.bytesWritten != length) {
+                        throw new Error(`payload write incomplete ${outResult.bytesWritten} of ${length}`);
                     }
                 }
             }
@@ -124,11 +142,10 @@
 
             console.log("usb device configured");
 
-
             return {
                 transferIn: (length) => device.transferIn(endpoints.in, length),
                 transferOut: (data) => device.transferOut(endpoints.out, data),
-                close: () => null, // TODO: device.close(),
+                close: () => device.close(),
             };
         }
 
@@ -138,16 +155,16 @@
                 const configuration = device.configurations[i];
                 console.log(`  configuration: ${configuration.configurationName} with ${configuration.interfaces.length} interfaces`);
                 for (let j = 0; j < configuration.interfaces.length; ++j) {
-                    const interface = configuration.interfaces[j];
-                    console.log(`    interface: ${interface.interfaceNumber} with ${interface.alternates.length} alternates`);
-                    for (let k = 0; k < interface.alternates.length; ++k) {
-                        const alternate = interface.alternates[k];
+                    const interfase = configuration.interfaces[j];
+                    console.log(`    interface: ${interfase.interfaceNumber} with ${interfase.alternates.length} alternates`);
+                    for (let k = 0; k < interfase.alternates.length; ++k) {
+                        const alternate = interfase.alternates[k];
                         console.log(`      alternate: ${alternate.alternateSetting} with ${alternate.endpoints.length} endpoints`);
                         console.log(`        class: ${alternate.interfaceClass} subclass: ${alternate.interfaceSubclass} protocol: ${alternate.interfaceProtocol}`);
                         if (alternate.interfaceClass == ADB_CLASS && alternate.interfaceSubclass == ADB_SUBCLASS && alternate.interfaceProtocol == ADB_PROTOCOL) {
                             return {
                                 configurationValue: configuration.configurationValue,
-                                interfaceNumber: interface.interfaceNumber,
+                                interfaceNumber: interfase.interfaceNumber,
                                 alternateSetting: alternate.alternateSetting,
                                 endpoints: {
                                     in: getEndpointNumber(alternate, "bulk", "in"),
