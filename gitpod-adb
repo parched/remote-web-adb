@@ -2,16 +2,18 @@
 
 trap 'kill 0' INT
 
+root_dir=$(dirname ${BASH_SOURCE[0]})
+
 ws_port=8080
 
-pushd server
+pushd "$root_dir/server"
 adb_port=5555
 node websocket-forward.js $ws_port $adb_port &
 gp await-port $ws_port
 popd
 
 ws_url=`gp url $ws_port`
-pushd client
+pushd "$root_dir/client"
 sed 's,WEBSOCKET_URL,'${ws_url/http/ws}',g' adb.html > index.html
 
 html_port=3000
