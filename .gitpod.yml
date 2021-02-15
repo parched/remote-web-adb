@@ -1,5 +1,5 @@
 tasks:
-  - init: 'pushd server && { npm install; popd; }'
+  - init: ./gitpod-adb init
 
 image:
   file: Dockerfile

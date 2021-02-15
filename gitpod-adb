@@ -4,6 +4,12 @@ trap 'kill 0' INT
 
 root_dir=$(dirname ${BASH_SOURCE[0]})
 
+if [ "$1" = init ]
+then
+    pushd "$root_dir/server" && { npm install; popd; }
+    exit $?
+fi
+
 ws_port=8080
 
 pushd "$root_dir/server"
