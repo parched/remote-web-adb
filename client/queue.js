@@ -82,6 +82,7 @@ Queue.prototype.read = async function (length) {
     const buffer = new ArrayBuffer(length);
     const bufferView = new Uint8Array(buffer);
     const firstMessageView = new Uint8Array(this.messages.shift(), this.posInFirstMessage);
+    this.posInFirstMessage = 0;
     bufferView.set(firstMessageView);
     let remaining = length - firstMessageView.length;
 

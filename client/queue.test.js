@@ -157,3 +157,31 @@ test('queue read 2 parts then write', () => {
 
     return result;
 });
+
+test('queue write then read then write', () => {
+    const q = new queue.Queue();
+
+    q.write(range(0, 2));
+    const result = expect(q.read(5)).resolves.toBeUint8Range(0, 5);
+    q.write(range(2, 5));
+
+    return result;
+});
+
+test('queue write then read partial then read incomplete then write complete then write and read again', async () => {
+    const q = new queue.Queue();
+    q.write(range(0, 5));
+
+    expect(await q.read(4)).toBeUint8Range(0, 4);
+
+    const result = expect(q.read(3)).resolves.toBeUint8Range(4, 7);
+
+    q.write(range(5, 7));
+
+    // queue is empty so state should be reset
+    q.write(range(10, 20));
+
+    expect(await q.read(10)).toBeUint8Range(10, 20);
+
+    return result;
+});
