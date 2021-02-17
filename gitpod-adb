@@ -24,7 +24,7 @@ sed 's,WEBSOCKET_URL,'${ws_url/http/ws}',g' adb.html > index.html
 
 html_port=3000
 # python3 -m http.server $html_port &
-http-server -p $html_port &
+http-server -p $html_port -c-1 &
 gp await-port $html_port
 echo "Open in new tab $(gp url $html_port)"
 
