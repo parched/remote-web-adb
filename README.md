@@ -1,6 +1,8 @@
 # remote-web-adb
 Connects an ADB device using WebUSB to a remote server running ADB.
 
+Needs chrome://flags/#enable-experimental-web-platform-features enabed.
+
 ## Usage in gitpod
 * `./gitpod-adb`
 * On the new page, click "Connect" and choose your Android device connected by USB
