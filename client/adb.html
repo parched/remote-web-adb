@@ -23,7 +23,14 @@
 
                         const socketWriter = writable.getWriter();
                         const socketReader = new ExactReader(readable.getReader());
-                        await Promise.race([readLoop(socketWriter, adb), writeLoop(socketReader, adb)]);
+
+                        // send an empty message every 2s to keep the connection alive
+                        const pingId = setInterval(() => socketWriter.write(''), 2000);
+                        try {
+                            await Promise.race([readLoop(socketWriter, adb), writeLoop(socketReader, adb)]);
+                        } finally {
+                            clearInterval(pingId);
+                        }
                     } finally {
                         console.log("closing websocket");
                         socket.close({code: 4000, reason: 'Game over'});
